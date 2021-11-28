@@ -1,0 +1,8 @@
+.env
+node_modules
+/bin/test.js
+compiled.js
+trade_results.log
+trade_data.csv
+balances.txt
+luno_*
