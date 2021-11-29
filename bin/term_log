@@ -1,0 +1,85 @@
+const { sleep, rtz, usdToMyr, computeBidAskPercent, computeBidBidPercent, computeAskAskPercent, currTime, epochToDatetime } = require('./utils')
+const fs = require('fs-extra')
+const os = require('os')
+const ccxtClient = require('./initExchangeClient')
+
+function systemLog(type = "info", message) {
+    try {
+        if (!message) { throw Error("message is undefined.") }
+        let messagePrefix = `-I- ${currTime()}`
+        if (type == "warning") {
+            messagePrefix = `-W- ${currTime()}`
+        } else if (type == "error") {
+            messagePrefix = `-E- ${currTime()}`
+        } else if (type == "system") {
+            messagePrefix = `-S- ${currTime()}`
+        }
+
+        if (process.platform !== "win32") {
+            // logging message to file
+            fs.appendFileSync('/tmp/cross-exchange-arb-bot.log', `${messagePrefix} ${message}${os.EOL}`)
+        }
+
+        // log on console
+        if (type !== "system") {
+            console.log(messagePrefix, message)
+        }
+
+    } catch (error) {
+        throw error
+    }
+}
+
+function recordTrade(message) {
+    // logging trade to file
+    message = `${currTime()},${message}`
+    fs.appendFileSync('./trade_data.csv', `${message}${os.EOL}`)
+}
+
+function updateBalanceFile(tickerObj) {
+    let datetime = `${currTime()}`
+
+    //clear file first
+    fs.writeFile('./balances.txt', '')
+
+    for (let exchange in tickerObj) {
+        if (exchange == 'luno') { delete tickerObj[exchange].USDT } else { delete tickerObj[exchange].MYR }
+        for (let asset in tickerObj[exchange]) {
+            delete tickerObj[exchange][asset].bid
+            delete tickerObj[exchange][asset].ask
+            delete tickerObj[exchange][asset].last
+        }
+    }
+    fs.writeFile('./balances.txt', JSON.stringify(tickerObj, null, 4))
+}
+
+async function fetchTrades(luno) {
+    try {
+        let assets = process.env.ASSETS.split(',');
+        for (let asset of assets) {
+            // set csv column title
+            fs.writeFile(`./luno_${asset}MYR.csv`, `datetime(UTC),pair,side,price,amount,fee${os.EOL}`)
+
+            let symbol = asset == 'BTC' ? `XBTMYR` : `${asset}MYR`
+            let since = luno.milliseconds() - 86040000 // -1 day from now
+            const data = await luno.private_get_listtrades({ pair: symbol, limit: 1000, sort_desc: true })
+            for (let trade of data.trades) {
+                let { timestamp, pair, is_buy, volume, price, fee_base } = trade
+                fs.appendFileSync(`./luno_${asset}MYR.csv`, `${epochToDatetime(timestamp, '+0')},${pair},${is_buy ? 'buy' : 'sell'},${price},${volume},${fee_base}${os.EOL}`)
+            }
+        }
+    } catch (error) {
+        // do nothing
+        return
+    }
+}
+
+
+async function run() {
+    await fetchTrades(ccxtClient['luno'])
+    await sleep(30000)
+    await run()
+}
+
+run()
+module.exports = { currTime, systemLog, recordTrade, updateBalanceFile, fetchTrades }
