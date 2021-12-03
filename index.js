@@ -253,7 +253,7 @@ async function computePotentialOrderSequence() {
 
         let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
         systemLog('info', msg)
-        if (sumPremiums < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
+        if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
     } catch (error) {
         throw error
     }
