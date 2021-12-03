@@ -13,6 +13,7 @@ process.env.APP_ROOT = __dirname
 process.env.BOT_VER = 'v2.4.1'
 
 let TICKER = {}
+let ORDERS = {}
 
 let ASSETS = process.env.ASSETS.split(',');
 const masterBase = 'MYR'
@@ -206,21 +207,74 @@ async function computeBestPremiumPercent() {
     }
 }
 
+async function computePotentialOrderSequence() {
+    try {
+        let masterBestBuy = undefined
+        let masterBestSell = undefined
+        for (let asset of ASSETS) {
+            let bestBuyPercent = TICKER[asset]['luno']['master']['buy'].bestPremiumPercent
+            let bestSellPercent = TICKER[asset]['luno']['master']['sell'].bestPremiumPercent
+
+            if (bestBuyPercent !== undefined) {
+                if (masterBestBuy == undefined) {
+                    masterBestBuy = TICKER[asset]['luno']['master']['buy']
+                    masterBestBuy['asset'] = asset
+                } else if (Number(bestBuyPercent) > Number(masterBestBuy.bestPremiumPercent)) {
+                    masterBestBuy = TICKER[asset]['luno']['master']['buy']
+                    masterBestBuy['asset'] = asset
+                }
+            }
+
+            if (bestSellPercent !== undefined) {
+                if (masterBestSell == undefined) {
+                    masterBestSell = TICKER[asset]['luno']['master']['sell']
+                    masterBestSell['asset'] = asset
+                } else if (Number(bestBuyPercent) > Number(masterBestBuy.bestPremiumPercent)) {
+                    masterBestSell = TICKER[asset]['luno']['master']['sell']
+                    masterBestSell['asset'] = asset
+                }
+            }
+        }
+        if ((masterBestBuy == undefined) || (masterBestSell == undefined)) { return false }
+
+        // Calculate premium
+        let sumPremiums = new BigNumber(masterBestBuy.bestPremiumPercent).plus(new BigNumber(masterBestSell.bestPremiumPercent)).toFixed()
+
+        ORDERS['luno'] = {
+            buy: masterBestBuy.asset,
+            sell: masterBestSell.asset
+        }
+
+        ORDERS[masterBestBuy.slave] = { sell: undefined }
+        ORDERS[masterBestBuy.slave]['sell'] = masterBestBuy.asset
+
+        if (ORDERS[masterBestSell.slave] == undefined) { ORDERS[masterBestSell.slave] = { buy: undefined } }
+        ORDERS[masterBestSell.slave]['buy'] = masterBestSell.asset
+
+        let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
+        systemLog('info', msg)
+        if (sumPremiums < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
+    } catch (error) {
+        throw error
+    }
+}
 
 async function run() {
     try {
-        console.time('run')
+        //console.time('run')
         // set USDTMYR in .env to reduce time used to call coingecko api
         await fetchUsdtMyrRate()
         // populate TICKER glob
         await fetchTicker()
         // fetch new balance because it may be reduced from previous iter placements
         await fetchBalances()
-
         await computeBestPremiumPercent()
 
         //console.log(util.inspect(TICKER, { showHidden: false, depth: null, colors: true }))
-        console.timeEnd('run')
+        await computePotentialOrderSequence()
+
+
+        //console.timeEnd('run')
         await run()
     } catch (error) {
         systemLog("error", String(error))
