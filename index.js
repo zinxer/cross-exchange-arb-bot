@@ -19,6 +19,15 @@ let ASSETS = process.env.ASSETS.split(',');
 const masterBase = 'MYR'
 const slaveBase = 'USDT'
 
+const DECIMALS = {
+    //TODO:
+    BTC: 4, //FTX max decimal places is 4
+    BCH: 3, //FTX + Binance max decimal places is 3
+    ETH: 3, //FTX max decimal places is 3
+    XRP: 0, //FTX + Binance max decimal places is 0
+    LTC: 2, //FTX max decimal places is 2
+}
+
 async function init() {
     try {
         if (process.env.SAFE_GAP_PERCENT < 0.5) {
@@ -251,9 +260,80 @@ async function computePotentialOrderSequence() {
         if (ORDERS[masterBestSell.slave] == undefined) { ORDERS[masterBestSell.slave] = { buy: undefined } }
         ORDERS[masterBestSell.slave]['buy'] = masterBestSell.asset
 
-        let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
-        systemLog('info', msg)
+        if (sumPremiums > 0) {
+            let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
+            systemLog('info', msg)
+        } else { systemLog('info', 'No profitable pairs.') }
+
+        //TODO: uncommented below line due to development purpose.
         if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
+    } catch (error) {
+        throw error
+    }
+}
+
+async function getAssetAmountFromFilledCost(masterFilledCostMyr, secondAssetPriceMyr, secondAsset) {
+    try {
+        let amount = (new BigNumber(masterFilledCostMyr).dividedBy(secondAssetPriceMyr)).toFixed(DECIMALS[secondAsset])
+        return amount
+    } catch (error) {
+        throw error
+    }
+}
+
+async function _createMarketOrder(exchange, symbol, side, amount) {
+    try {
+
+    } catch (error) {
+        throw error
+    }
+}
+
+async function placeOrders() {
+    try {
+        // place master limit buy order first
+        let masterBuyAsset = ORDERS['luno'].buy
+        let masterBuyBidPrice = TICKER[masterBuyAsset]['luno'].bid
+        let masterBuySymbol = `${ORDERS['luno'].buy}/${masterBase}`
+        let percentBN = new BigNumber(0.0001).multipliedBy(new BigNumber(masterBuyBidPrice))
+        let percentPlusPriceBN = percentBN.plus(new BigNumber(masterBuyBidPrice))
+        let masterBuyAmount = (new BigNumber(process.env.ORDER_SIZE_MYR).dividedBy(percentPlusPriceBN)).toFixed(DECIMALS[masterBuyAsset])
+
+        //console.log(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
+        let { id } = await ccxtClient['luno'].createLimitBuyOrder(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
+        await sleep(CYCLE_TIME_MS)
+
+        // ** cancel above limit order and get amount filled.
+        let { status } = await ccxtClient['luno'].fetchOrder(id)
+        if (status == "open") {
+            // cancel order first
+            await ccxtClient['luno'].cancelOrder(id)
+            // allow exchange to update their own system before responding.
+            await sleep(300)
+        }
+
+        // query to get filled amount and make sure order is closed
+        let orderInfo = await ccxtClient['luno'].fetchOrder(id)
+        if (orderInfo.filled > 0) {
+            let filledAmt = Math.round((orderInfo.filled + Number.EPSILON) * (10 ** DECIMALS[masterBuyAsset])) / (10 ** DECIMALS[masterBuyAsset])
+            let masterBaseFee = orderInfo.fee.cost
+
+            let masterSellAsset = ORDERS['luno'].sell
+            await _createMarketOrder('luno', `${masterSellAsset}/${masterBase}`, 'sell', getAssetAmountFromFilledCost(orderInfo.cost, TICKER[masterSellAsset]['luno'].last, masterSellAsset))
+
+            for (let exClient in ccxtClient) {
+                if (exClient == 'luno') { continue }
+
+                let slaveBuyAsset = ORDERS[exClient].buy
+                let slaveAssetPriceMyr1 = usdToMyr(TICKER[slaveBuyAsset][exClient].last)
+                await _createMarketOrder(exClient, `${masterSellAsset}/${slaveBase}`, 'buy', getAssetAmountFromFilledCost(orderInfo.cost, slaveAssetPriceMyr1, slaveBuyAsset))
+
+                let slaveSellAsset = ORDERS[exClient].sell
+                let slaveAssetPriceMyr2 = usdToMyr(TICKER[slaveSellAsset][exClient].last)
+                await _createMarketOrder(exClient, `${masterSellAsset}/${masterBase}`, 'sell', getAssetAmountFromFilledCost(orderInfo.cost, slaveAssetPriceMyr2, slaveSellAsset))
+            }
+        }
+
     } catch (error) {
         throw error
     }
@@ -273,6 +353,9 @@ async function run() {
         //console.log(util.inspect(TICKER, { showHidden: false, depth: null, colors: true }))
         await computePotentialOrderSequence()
 
+        if (Object.keys(ORDERS).length !== 0) {
+            await placeOrders()
+        }
 
         //console.timeEnd('run')
         await run()
