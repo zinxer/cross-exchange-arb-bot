@@ -266,10 +266,10 @@ async function computePotentialOrderSequence() {
         } else { systemLog('info', 'No profitable pairs.') }
 
         //TODO: uncommented below line due to development purpose.
-        //if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
+        if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
 
         // TODO: Remove the hardcorded ORDERS, used for development purposes only.
-        ORDERS = { "luno": { "buy": "ETH", "sell": "BTC" }, "FTX": { "sell": "ETH", "buy": "BTC" } }
+        //ORDERS = { "luno": { "buy": "ETH", "sell": "BTC" }, "FTX": { "sell": "ETH", "buy": "BTC" } }
     } catch (error) {
         throw error
     }
