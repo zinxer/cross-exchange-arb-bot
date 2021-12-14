@@ -18,6 +18,7 @@ let ORDERS = {}
 let ASSETS = process.env.ASSETS.split(',');
 const masterBase = 'MYR'
 const slaveBase = 'USDT'
+let MASTER_ORDER_ID = null
 
 const DECIMALS = {
     //TODO:
@@ -260,16 +261,21 @@ async function computePotentialOrderSequence() {
         if (ORDERS[masterBestSell.slave] == undefined) { ORDERS[masterBestSell.slave] = { buy: undefined } }
         ORDERS[masterBestSell.slave]['buy'] = masterBestSell.asset
 
-        if (sumPremiums > 0) {
-            let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
-            systemLog('info', msg)
-        } else { systemLog('info', 'No profitable pairs.') }
+        if (ORDERS['luno'].buy !== ORDERS['luno'].sell) {
+            if (sumPremiums > 0) {
+                let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
+                systemLog('info', msg)
+            } else { systemLog('info', 'No profitable pairs.') }
 
-        //TODO: uncommented below line due to development purpose.
-        if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
+            //TODO: uncommented below line due to development purpose.
+            if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
 
-        // TODO: Remove the hardcorded ORDERS, used for development purposes only.
-        //ORDERS = { "luno": { "buy": "ETH", "sell": "BTC" }, "FTX": { "sell": "ETH", "buy": "BTC" } }
+            // TODO: Remove the hardcorded ORDERS, used for development purposes only.
+            //ORDERS = { "luno": { "buy": "ETH", "sell": "BTC" }, "FTX": { "sell": "ETH", "buy": "BTC" } }
+        } else {
+            systemLog('info', 'No profitable pairs.')
+            ORDERS = {}
+        }
     } catch (error) {
         throw error
     }
@@ -320,19 +326,24 @@ async function placeOrders() {
         let percentPlusPriceBN = percentBN.plus(new BigNumber(masterBuyBidPrice))
         let masterBuyAmount = (new BigNumber(process.env.ORDER_SIZE_MYR).dividedBy(percentPlusPriceBN)).toFixed(DECIMALS[masterBuyAsset])
 
-        //console.log(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
-        let { id } = await ccxtClient['luno'].createLimitBuyOrder(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
-        await sleep(process.env.CYCLE_TIME_MS)
+        // skip placing order if already exist
+        if (!MASTER_ORDER_ID) {
+            //console.log(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
+            let { id } = await ccxtClient['luno'].createLimitBuyOrder(masterBuySymbol, masterBuyAmount, percentPlusPriceBN.toFixed(2))
+            MASTER_ORDER_ID = id
+            await sleep(process.env.CYCLE_TIME_MS)
 
-        // ** cancel above limit order and get amount filled.
-        let { status } = await ccxtClient['luno'].fetchOrder(id)
-        if (status == "open") {
-            // cancel order first
-            await ccxtClient['luno'].cancelOrder(id)
-            // allow exchange to update their own system before responding.
-            await sleep(300)
+            // ** cancel above limit order and get amount filled.
+            let { status } = await ccxtClient['luno'].fetchOrder(id)
+            if (status == "open") {
+                // cancel order first
+                await ccxtClient['luno'].cancelOrder(id)
+                // allow exchange to update their own system before responding.
+                await sleep(300)
+            }
         }
 
+        if (MASTER_ORDER_ID) { id = MASTER_ORDER_ID }
         // query to get filled amount and make sure order is closed
         let orderInfo = await ccxtClient['luno'].fetchOrder(id)
         if (orderInfo.filled > 0) {
@@ -365,13 +376,17 @@ async function placeOrders() {
         }
 
     } catch (error) {
-        throw error
+        let newError = Object.getOwnPropertyNames(error).reduce((acc, key) => { acc[key] = error[key]; return acc; }, {})
+        if ((newError.message).match(/ErrCannotStopUnknownOrNonPendingOrder/g)) { await placeOrders() }
+        else { throw error }
     }
 }
 
 async function run() {
     try {
         //console.time('run')
+        if (process.env.ON_KILL) { systemLog("info", `Bot cycle stopped.`); process.exit() }
+
         // set USDTMYR in .env to reduce time used to call coingecko api
         await fetchUsdtMyrRate()
         // populate TICKER glob
@@ -386,7 +401,8 @@ async function run() {
         if (Object.keys(ORDERS).length !== 0) {
             await placeOrders()
         }
-
+        ORDERS = {}
+        MASTER_ORDER_ID = null
         //console.timeEnd('run')
         await run()
     } catch (error) {
@@ -397,3 +413,10 @@ async function run() {
 
 
 init()
+
+process.on('SIGINT', async () => {
+    console.log(`\n\n`)
+    systemLog("warning", `[PLEASE HOLD, DO NOT SPAM EXIT]`)
+    systemLog("info", `Exiting bot..., stopping bot cycle, cancelling any limit orders and placing final market orders...`)
+    process.env.ON_KILL = true
+});
