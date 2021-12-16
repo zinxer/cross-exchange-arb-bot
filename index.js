@@ -11,14 +11,14 @@ const util = require('util');
 const { buda } = require("ccxt");
 
 process.env.APP_ROOT = __dirname
-process.env.BOT_VER = 'v2.4.1'
+process.env.BOT_VER = 'v2.4.1_u'
 
 let TICKER = {}
 let ORDERS = {}
 
 let ASSETS = process.env.ASSETS.split(',');
 const masterBase = 'MYR'
-const slaveBase = 'USDT'
+const slaveBase = 'USD'
 let MASTER_ORDER_ID = null
 
 const DECIMALS = {
@@ -79,14 +79,14 @@ function updateBalanceFile() {
 
     for (let asset in tickerObj) {
         if (tickerObj[asset]['FTX'] !== undefined) {
-            if (asset == 'MYR') { delete tickerObj[asset]['FTX']; continue }
+            if (asset == masterBase) { delete tickerObj[asset]['FTX']; continue }
         }
 
         if (tickerObj[asset]['Binance'] !== undefined) {
-            if (asset == 'MYR') { delete tickerObj[asset]['Binance']; continue }
+            if (asset == masterBase) { delete tickerObj[asset]['Binance']; continue }
         }
 
-        if (asset == "USDT") { delete tickerObj[asset]['luno']; continue }
+        if (asset == slaveBase) { delete tickerObj[asset]['luno']; continue }
 
         delete tickerObj[asset]['luno'].ask
         delete tickerObj[asset]['luno'].bid
