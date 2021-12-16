@@ -76,7 +76,7 @@ async function fetchTrades(luno) {
 
 
 async function run() {
-    await fetchTrades(ccxtClient['luno'])
+    //await fetchTrades(ccxtClient['luno'])
     await sleep(30000)
     await run()
 }

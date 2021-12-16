@@ -1,7 +1,8 @@
 require("dotenv").config();
 const BigNumber = require('bignumber.js')
 const ccxtClient = require('./bin/initExchangeClient')
-const { systemLog, updateBalanceFile } = require('./bin/term_log')
+const fs = require('fs-extra')
+const { systemLog } = require('./bin/term_log')
 const { cancelLimitPlaceMarket, placeLimitOrder } = require('./controllers/core')
 const { getExternalIpAddress, currTime, sleep, usdToMyr } = require('./bin/utils')
 const axios = require('axios')
@@ -67,6 +68,27 @@ async function initTicker() {
             TICKER[asset][exchange] = prop
         }
     }
+}
+
+
+function updateBalanceFile() {
+
+    //clear file first
+    fs.writeFile('./balances.txt', '')
+    let tickerObj = TICKER
+
+    for (let asset in tickerObj) {
+        if (asset == 'MYR') { delete tickerObj[asset]['FTX']; continue }
+        if (asset == "USDT") { delete tickerObj[asset]['luno']; continue }
+        //delete tickerObj[asset]['luno'].master
+    }
+    fs.writeFile('./balances.txt', JSON.stringify(tickerObj, null, 4))
+}
+
+function recordTrade(message) {
+    // logging trade to file
+    message = `${currTime()},${message}`
+    fs.appendFileSync('./trade_data.csv', `${message}${os.EOL}`)
 }
 
 async function fetchUsdtMyrRate() {
@@ -136,7 +158,7 @@ async function fetchBalances() {
             }
         }
 
-        //await updateBalanceFile(TICKER)
+        await updateBalanceFile()
     } catch (error) {
         throw error
     }
@@ -372,6 +394,7 @@ async function placeOrders() {
 
             let myrProfit = Math.abs(diff1 - diff2)
             let msg = `${ORDERS['luno'].buyCost},${ORDERS[Object.keys(ORDERS)[1]].sellCost},${ORDERS['luno'].sellCost},${ORDERS[Object.keys(ORDERS)[1]].buyCost},${parseFloat(myrProfit).toFixed(2)}`
+            recordTrade(msg)
             systemLog("info", msg)
         }
 
