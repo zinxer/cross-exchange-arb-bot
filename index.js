@@ -75,12 +75,36 @@ function updateBalanceFile() {
 
     //clear file first
     fs.writeFile('./balances.txt', '')
-    let tickerObj = TICKER
+    let tickerObj = JSON.parse(JSON.stringify(TICKER))
 
     for (let asset in tickerObj) {
-        if (asset == 'MYR') { delete tickerObj[asset]['FTX']; continue }
+        if (tickerObj[asset]['FTX'] !== undefined) {
+            if (asset == 'MYR') { delete tickerObj[asset]['FTX']; continue }
+        }
+
+        if (tickerObj[asset]['Binance'] !== undefined) {
+            if (asset == 'MYR') { delete tickerObj[asset]['Binance']; continue }
+        }
+
         if (asset == "USDT") { delete tickerObj[asset]['luno']; continue }
-        //delete tickerObj[asset]['luno'].master
+
+        delete tickerObj[asset]['luno'].ask
+        delete tickerObj[asset]['luno'].bid
+        delete tickerObj[asset]['luno'].last
+
+        if (tickerObj[asset]['FTX'] !== undefined) {
+            delete tickerObj[asset]['FTX'].ask
+            delete tickerObj[asset]['FTX'].bid
+            delete tickerObj[asset]['FTX'].last
+        }
+
+        if (tickerObj[asset]['Binance'] !== undefined) {
+            delete tickerObj[asset]['Binance'].ask
+            delete tickerObj[asset]['Binance'].bid
+            delete tickerObj[asset]['Binance'].last
+        }
+
+        delete tickerObj[asset]['luno'].master
     }
     fs.writeFile('./balances.txt', JSON.stringify(tickerObj, null, 4))
 }
