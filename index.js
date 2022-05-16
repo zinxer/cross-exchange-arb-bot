@@ -11,14 +11,14 @@ const util = require('util');
 const { buda } = require("ccxt");
 
 process.env.APP_ROOT = __dirname
-process.env.BOT_VER = 'v2.4.1_u'
+process.env.BOT_VER = 'v2.4.1'
 
 let TICKER = {}
 let ORDERS = {}
 
 let ASSETS = process.env.ASSETS.split(',');
 const masterBase = 'MYR'
-const slaveBase = 'USD'
+const slaveBase = 'USDT'
 let MASTER_ORDER_ID = null
 
 const DECIMALS = {
@@ -44,7 +44,7 @@ async function init() {
         systemLog("info", `Initializing cross-exchange-arb-bot (${process.env.BOT_VER})...`)
         systemLog("system", `cross-exchange-arb-bot (${process.env.BOT_VER}) started`)
 
-        initTicker()
+        await initTicker()
         run()
     } catch (error) {
         throw error
@@ -294,6 +294,7 @@ async function computePotentialOrderSequence() {
         if ((masterBestBuy == undefined) || (masterBestSell == undefined)) { return false }
 
         // Calculate premium
+        console.log(`masterBestBuy ${masterBestBuy.bestPremiumPercent}`, `masterBestSell ${masterBestSell.bestPremiumPercent}`)
         let sumPremiums = new BigNumber(masterBestBuy.bestPremiumPercent).plus(new BigNumber(masterBestSell.bestPremiumPercent)).toFixed()
 
         ORDERS['luno'] = {
@@ -306,12 +307,12 @@ async function computePotentialOrderSequence() {
 
         if (ORDERS[masterBestSell.slave] == undefined) { ORDERS[masterBestSell.slave] = { buy: undefined } }
         ORDERS[masterBestSell.slave]['buy'] = masterBestSell.asset
-
+        console.log(ORDERS)
         if (ORDERS['luno'].buy !== ORDERS['luno'].sell) {
             if (sumPremiums > 0) {
                 let msg = `${JSON.stringify(ORDERS)} ${(parseFloat(sumPremiums)).toFixed(2)}%`
                 systemLog('info', msg)
-            } else { systemLog('info', 'No profitable pairs.') }
+            } else { systemLog('info', 'No profitable pairs1.') }
 
             //TODO: uncommented below line due to development purpose.
             if (Number(sumPremiums) < process.env.SAFE_GAP_PERCENT) { ORDERS = {}; return false }
@@ -319,7 +320,8 @@ async function computePotentialOrderSequence() {
             // TODO: Remove the hardcorded ORDERS, used for development purposes only.
             //ORDERS = { "luno": { "buy": "ETH", "sell": "BTC" }, "FTX": { "sell": "ETH", "buy": "BTC" } }
         } else {
-            systemLog('info', 'No profitable pairs.')
+            systemLog('info', 'No profitable pairs2.')
+            console.log(ORDERS)
             ORDERS = {}
         }
     } catch (error) {
@@ -448,6 +450,7 @@ async function run() {
         if (Object.keys(ORDERS).length !== 0) {
             await placeOrders()
         }
+        //console.log(TICKER)
         ORDERS = {}
         MASTER_ORDER_ID = null
         //console.timeEnd('run')
