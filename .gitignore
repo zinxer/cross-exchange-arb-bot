@@ -6,3 +6,16 @@ trade_results.log
 trade_data.csv
 balances.txt
 luno_*
+# secrets guard
+bin/test.js
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+keystore/
+*.dump
+*.bak
+secrets/
